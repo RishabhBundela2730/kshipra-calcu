@@ -1,0 +1,318 @@
+<!--
+Kshipra Calculator - Progressive Web App
+
+Files included below (copy each into a file in a single folder):
+  1) index.html        (this file - main UI)
+  2) manifest.json     (web app manifest)
+  3) sw.js             (service worker for offline caching)
+  4) icon-192.png      (SVG provided as icon-192.svg; you can export PNG if you want)
+  5) icon-512.png      (SVG provided as icon-512.svg)
+
+How to install locally for testing:
+  1. Create a folder and save each section into the filenames above.
+  2. Serve the folder over a local server (service workers require https or localhost):
+     - Python: `python -m http.server 8000`  (from the folder)
+     - Or use VS Code Live Server extension
+  3. Open http://localhost:8000 in Chrome on mobile or desktop.
+  4. Use browser's "Add to Home screen" or the install prompt to install the PWA.
+
+If you want, I can convert this into an Android APK for you next.
+-->
+
+<!-- ================= FILE: index.html ================= -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Kshipra Calculator</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="icon" href="icon-192.png">
+  <style>
+    :root{
+      --bg:#0f172a; /* dark navy */
+      --card:#0b1220;
+      --accent:#f59e0b; /* amber */
+      --muted:#94a3b8;
+      --glass: rgba(255,255,255,0.03);
+      color-scheme: dark;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;background:linear-gradient(180deg,var(--bg),#071025);color:#e6eef8}
+    .app{max-width:520px;margin:20px auto;padding:18px}
+    header{display:flex;gap:12px;align-items:center}
+    .logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#f97316);display:flex;align-items:center;justify-content:center;font-weight:700;color:#071025;font-size:20px}
+    h1{font-size:20px;margin:0}
+    p.subtitle{margin:0;color:var(--muted);font-size:13px}
+
+    .card{margin-top:18px;background:var(--card);padding:14px;border-radius:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    label{display:block;font-weight:600;font-size:13px;color:var(--muted)}
+    .row{display:flex;gap:10px}
+    select,input{width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit;font-size:15px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    button.primary{width:100%;padding:12px;margin-top:14px;border-radius:10px;border:0;background:linear-gradient(90deg,var(--accent),#fb923c);color:#071025;font-weight:700;font-size:16px}
+    .result{margin-top:12px;padding:12px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03)}
+    .small{font-size:13px;color:var(--muted)}
+    .row-center{display:flex;align-items:center;gap:8px}
+    footer{margin-top:18px;color:var(--muted);font-size:13px;text-align:center}
+    .install-btn{display:inline-block;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);cursor:pointer;margin-top:10px}
+    @media (max-width:420px){.app{padding:12px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">K</div>
+      <div>
+        <h1>Kshipra Calculator</h1>
+        <p class="subtitle">Oil pricing calculator — lightweight PWA (installable & offline)</p>
+      </div>
+    </header>
+
+    <div class="card" role="application">
+      <label>Rate type</label>
+      <select id="unit" aria-label="rate type">
+        <option value="ltr">₹ per Litre</option>
+        <option value="kg">₹ per Kg</option>
+      </select>
+
+      <label>Loose rate</label>
+      <input id="rate" type="number" step="0.01" value="120" />
+
+      <div class="grid">
+        <div>
+          <label>Density (kg per litre, e.g. 0.92)</label>
+          <input id="density" type="number" step="0.001" value="0.92" />
+        </div>
+        <div>
+          <label>Margin % (optional)</label>
+          <input id="margin" type="number" step="0.01" value="5" />
+        </div>
+      </div>
+
+      <div style="margin-top:10px"></div>
+
+      <div class="row">
+        <div style="flex:1">
+          <label>Packing cost for 15L (₹)</label>
+          <input id="pack15" type="number" step="0.01" value="20">
+        </div>
+        <div style="flex:1">
+          <label>Packing cost for 5L (₹)</label>
+          <input id="pack5" type="number" step="0.01" value="8">
+        </div>
+      </div>
+
+      <label style="margin-top:10px">Packing cost for 1L (₹)</label>
+      <input id="pack1" type="number" step="0.01" value="1">
+
+      <button class="primary" id="calc">Calculate</button>
+
+      <div id="result" class="result small">Results will appear here.</div>
+
+      <div style="display:flex;gap:10px;justify-content:space-between;margin-top:12px;align-items:center">
+        <div>
+          <div class="small">Quick actions</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="copy" class="install-btn">Copy Prices</button>
+            <button id="share" class="install-btn">Share</button>
+          </div>
+        </div>
+        <div>
+          <div id="a2hs" class="install-btn" style="display:none">Install App</div>
+        </div>
+      </div>
+
+    </div>
+
+    <footer>
+      Built for Oil pricing • Works offline • Kshipra
+    </footer>
+  </div>
+
+  <script>
+    // Simple UI helpers
+    const fmt = x => Number(x).toFixed(2);
+
+    function calculateValues() {
+      const unit = document.getElementById('unit').value;
+      let rate = parseFloat(document.getElementById('rate').value) || 0;
+      const density = parseFloat(document.getElementById('density').value) || 1;
+      const p15 = parseFloat(document.getElementById('pack15').value) || 0;
+      const p5 = parseFloat(document.getElementById('pack5').value) || 0;
+      const p1 = parseFloat(document.getElementById('pack1').value) || 0;
+      const m = parseFloat(document.getElementById('margin').value) || 0;
+
+      if (unit === 'kg') rate = rate * density;
+
+      function price(l, packing) {
+        const base = rate * l + packing;
+        return base * (1 + m/100);
+      }
+
+      const r15 = price(15, p15);
+      const r5 = price(5, p5);
+      const r1 = price(1, p1);
+
+      return {rate, r15, r5, r1};
+    }
+
+    function render() {
+      const {rate, r15, r5, r1} = calculateValues();
+      const el = document.getElementById('result');
+      el.innerHTML = `
+        <div><strong>Base rate per litre: ₹${fmt(rate)}</strong></div>
+        <div style="margin-top:8px">15 L → ₹${fmt(r15)} &nbsp; (<strong>₹${fmt(r15/15)}</strong> / L)</div>
+        <div>5 L → ₹${fmt(r5)} &nbsp; (<strong>₹${fmt(r5/5)}</strong> / L)</div>
+        <div>1 L → ₹${fmt(r1)} &nbsp; (<strong>₹${fmt(r1)}</strong> / L)</div>
+      `;
+    }
+
+    document.getElementById('calc').addEventListener('click', render);
+
+    // convenience: calculate on Enter inside inputs
+    document.querySelectorAll('input,select').forEach(el=>{
+      el.addEventListener('keydown', e=>{ if(e.key==='Enter') render(); });
+    });
+
+    // Copy to clipboard
+    document.getElementById('copy').addEventListener('click', ()=>{
+      const {rate, r15, r5, r1} = calculateValues();
+      const text = `Base rate per L: ₹${fmt(rate)}\n15L: ₹${fmt(r15)} (₹${fmt(r15/15)}/L)\n5L: ₹${fmt(r5)} (₹${fmt(r5/5)}/L)\n1L: ₹${fmt(r1)} (₹${fmt(r1)}/L)`;
+      navigator.clipboard?.writeText(text).then(()=>alert('Prices copied to clipboard'))
+        .catch(()=>alert('Unable to copy'));
+    });
+
+    // Share (if supported)
+    document.getElementById('share').addEventListener('click', async ()=>{
+      const {rate, r15, r5, r1} = calculateValues();
+      const text = `Kshipra Calculator:\nBase per L: ₹${fmt(rate)}\n15L: ₹${fmt(r15)} (₹${fmt(r15/15)}/L)\n5L: ₹${fmt(r5)} (₹${fmt(r5/5)}/L)\n1L: ₹${fmt(r1)} (₹${fmt(r1)}/L)`;
+      if(navigator.share) {
+        try{ await navigator.share({title:'Kshipra Calculator', text}); }
+        catch(e){ alert('Share cancelled'); }
+      } else {
+        alert('Share not supported on this device');
+      }
+    });
+
+    // Install prompt handling
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e)=>{
+      e.preventDefault();
+      deferredPrompt = e;
+      const btn = document.getElementById('a2hs');
+      btn.style.display = 'inline-block';
+      btn.addEventListener('click', async ()=>{
+        btn.style.display='none';
+        deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+      });
+    });
+
+    // Service worker registration
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('sw.js').then(()=>{
+        console.log('sw registered');
+      }).catch(err=>console.warn('sw failed',err));
+    }
+
+    // initial render
+    render();
+  </script>
+</body>
+</html>
+
+
+<!-- ================= FILE: manifest.json ================= -->
+{
+  "name": "Kshipra Calculator",
+  "short_name": "Kshipra",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "description": "Oil pricing calculator — Kshipra",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
+
+
+<!-- ================= FILE: sw.js ================= -->
+const CACHE = 'kshipra-calculator-v1';
+const FILES = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png'
+];
+
+self.addEventListener('install', (evt) => {
+  evt.waitUntil((async()=>{
+    const cache = await caches.open(CACHE);
+    try{ await cache.addAll(FILES); } catch(e){ console.warn('Some files failed to cache', e); }
+  })());
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (evt) => {
+  evt.waitUntil((async()=>{
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)));
+  })());
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (evt) => {
+  evt.respondWith((async()=>{
+    try{
+      const r = await fetch(evt.request);
+      const cache = await caches.open(CACHE);
+      cache.put(evt.request, r.clone());
+      return r;
+    }catch(e){
+      const cache = await caches.open(CACHE);
+      const cached = await cache.match(evt.request);
+      return cached || (await cache.match('/index.html'));
+    }
+  })());
+});
+
+
+<!-- ================= FILE: icon-192.svg ================= -->
+<!-- Simple SVG icon you can convert to PNG (recommended sizes: 192x192 and 512x512)
+     Save this as icon-192.svg and export to PNG using online tools or an image editor. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1">
+      <stop offset="0" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#fb923c"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" rx="48" fill="#071025"/>
+  <circle cx="256" cy="176" r="84" fill="url(#g)" />
+  <path d="M140 360c36-80 140-84 176-84s140 4 176 84H140z" fill="#0b1220" opacity="0.6"/>
+  <text x="256" y="196" font-size="140" font-family="Arial" font-weight="700" text-anchor="middle" fill="#071025">K</text>
+</svg>
+
+
+<!-- ================= FILE: icon-512.svg ================= -->
+<!-- Same design but larger; export to PNG at 512x512 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g2" x1="0" x2="1">
+      <stop offset="0" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#fb923c"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" rx="48" fill="#071025"/>
+  <circle cx="256" cy="176" r="140" fill="url(#g2)" />
+  <path d="M80 420c40-100 200-100 256-100s216 0 256 100H80z" fill="#0b1220" opacity="0.6"/>
+  <text x="256" y="216" font-size="180" font-family="Arial" font-weight="700" text-anchor="middle" fill="#071025">K</text>
+</svg>
